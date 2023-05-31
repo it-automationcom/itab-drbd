@@ -1,0 +1,20 @@
+{% set port = 7788 + idx %}
+resource {{ item.key }} {
+        protocol {{ item.value.protocol }};
+        startup {
+                wfc-timeout  15;
+                degr-wfc-timeout 60;
+        }
+        net {
+                cram-hmac-alg sha1;
+                shared-secret "{{ item.value.secret }}";
+        }
+        {% for host in ansible_play_hosts_all %}
+on {{ hostvars[host].inventory_hostname }} {
+                device /dev/{{ item.key }};
+                disk {{ item.value.disk }};
+                address {{ hostvars[host].ansible_default_ipv4.address }}:{{ port }};
+                meta-disk internal;
+        }
+        {% endfor %}
+}

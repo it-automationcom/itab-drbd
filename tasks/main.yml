@@ -1,0 +1,52 @@
+---
+- name: install drbd
+  become: true
+  apt:
+    update_cache: true
+    state: present
+    pkg:
+      - drbd-utils
+- name: check if disk exists
+  register: check_blockdevice
+  with_items:
+    - "{{ drbd | dict2items }}"
+  shell:
+    cmd: "test -b {{ item.value.disk }}"
+  failed_when:
+    - check_blockdevice.rc != 0
+  changed_when:
+    - false
+- name: "set up drbd resources config"
+  with_items:
+    - "{{ drbd | dict2items }}"
+  loop_control:
+    index_var: idx
+  notify: drbd_config_changed
+  become: true
+  template:
+    src: drbd.conf.j2
+    dest: "/etc/drbd.d/{{ item.key }}.res"
+- name: flush handlers
+  meta: flush_handlers
+- name: start drbd device
+  with_items:
+    - "{{ drbd | dict2items }}"
+  become: true
+  shell:
+    cmd: "drbdadm up {{ item.key }}"
+  register: drbd_started
+  changed_when:
+    - drbd_started.rc == 0
+  failed_when:
+    - drbd_started.rc == 1 and "is configured" not in drbd_started.stderr
+- name: connect drbd device
+  register: drbd_connected
+  with_items:
+    - "{{ drbd | dict2items }}"
+  become: true
+  shell:
+    cmd: "drbdadm cstate drbd0 | grep \"StandAlone\" && drbdadm connect {{ item.key }}"
+  changed_when:
+    - drbd_connected.rc == 0 and "StandAlone" in drbd_connected.stdout
+  failed_when:
+    - drbd_connected.rc !=1 and drbd_connected.rc !=0

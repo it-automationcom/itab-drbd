@@ -1,0 +1,57 @@
+---
+- name: create metadata
+  listen: drbd_config_changed
+  become: true
+  shell:
+    cmd: drbdadm dstate drbd0 || drbdadm create-md drbd0
+- name: start drbd device
+  listen: drbd_config_changed
+  become: true
+  register: drbd_started
+  changed_when:
+    - drbd_started.rc == 0
+  failed_when:
+    - drbd_started.rc == 1 and "is configured" not in drbd_started.stderr
+  shell:
+    cmd: drbdadm up drbd0
+- name: check dstate
+  register: drbd_dstate
+  listen: drbd_config_changed
+  become: true
+  shell:
+    cmd: drbdadm dstate drbd0
+- name: invalidate
+  listen: drbd_config_changed
+  become: true
+  run_once:
+  when:
+    - "'Inconsistent/Inconsistent' in drbd_dstate.stdout"
+  shell:
+    cmd: drbdadm invalidate drbd0
+- name: check role
+  register: drbd_role
+  listen: drbd_config_changed
+  become: true
+  shell:
+    cmd: drbdadm role drbd0
+- name: make drbd0 primary
+  listen: drbd_config_changed
+  become: true
+  run_once:
+  when:
+    - "'Secondary/Secondary' in drbd_role.stdout"
+  shell: drbdadm primary drbd0
+- name: check filesystem
+  listen: drbd_config_changed
+  register: filesystem
+  become: true
+  run_once:
+  shell: 
+    cmd: blkid /dev/drbd0 | tr " " "\n" | grep TYPE | cut -d"=" -f2 | tr -d "\""
+- name: create filesystem
+  listen: drbd_config_changed
+  become: true
+  when:
+    - "'ext4' not in filesystem.stdout"
+  shell:
+    cmd: mkfs.ext4 /dev/drbd0
